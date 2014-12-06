@@ -99,7 +99,26 @@ public class PlayerMovement : MonoBehaviour
 		void calculateSpeedUserShouldHave ()
 		{
 //		
-//				float percentageToChange = currentAccelerationPercentage ();
+				float percentageToChange = currentAccelerationPercentage ();
+				float diff = maxSpeedChange * percentageToChange;
+				float newSpeed = Mathf.Min (speedUserShouldHave + diff, maxSpeed);
+				newSpeed = Mathf.Max (0, newSpeed);
+				Debug.Log ("NS: " + newSpeed);
+				if (Mathf.Abs (percentageToChange) > thresholdAccelerometerValue) {
+						speedUserShouldHave = newSpeed;
+						if (percentageToChange > 0) {
+								FORCEINDICATOR.color = Color.green;
+								FORCEINDICATOR.text = "ACCELERATING";
+//								FORCEINDICATOR.text = "%-" + percentageToChange.ToString ("F1") + " Speed UP - " + newSpeed.ToString ("F1") + "m/s";
+						} else {
+								FORCEINDICATOR.color = Color.red;
+								FORCEINDICATOR.text = "BREAKING";
+						}
+				} else {
+						FORCEINDICATOR.color = Color.black;
+						FORCEINDICATOR.text = "-";
+				}
+		
 //				float currentSpeed = controller.velocity.magnitude;
 //		
 //				bool lessThanThreshold = Mathf.Abs (percentageToChange) < thresholdAccelerometerValue;
@@ -141,6 +160,7 @@ public class PlayerMovement : MonoBehaviour
 //				FORCEINDICATOR.color = Color.magenta;
 //				FORCEINDICATOR.text = "%-" + percentageToChange.ToString ("F1");
 //				
+				calculateSpeedUserShouldHave ();
 				CharacterController controller = GetComponent<CharacterController> ();
 		
 				Vector3 forward = transform.TransformDirection (Vector3.forward);
@@ -148,7 +168,7 @@ public class PlayerMovement : MonoBehaviour
 //				controller.SimpleMove (newVelocity);
 		
 				//Debug.Log ("current speed:" + curSpeed);
-				controller.SimpleMove (forward * maxSpeed);
+				controller.SimpleMove (forward * speedUserShouldHave);
 				
 				//Debug.Log ("current velocity: " + controller.velocity);
 		
