@@ -6,15 +6,27 @@ public class PlayerMovement : MonoBehaviour
 {
 	
 		private Vector3 startVector;
+		private Quaternion startRotationVector;
 	
 		public float restartHeight;
 	
-		public float maxSpeed;
+		public float regularSpeed;
 		public float maxForce;
 		public float maxSpeedChange;
 		private float speedUserShouldHave;
+		public float boostSpeed;
+		public float boostTime;
 		public float rotateSpeed = 3.0F;
 		public float thresholdAccelerometerValue;
+		
+		private float endTimeForBoost;
+		
+		private Vector3 lastContactPoint;
+		private Vector3 secondLastContactPoint;
+		private Vector3 thirdLastContactPoint;
+		
+		private Vector3 lastFWTrajectory;
+		
 		
 		private Transform PLAYERCAMTRANSFORM;
 				
@@ -23,10 +35,12 @@ public class PlayerMovement : MonoBehaviour
 		void Start ()
 		{
 				startVector = transform.position;
+				startRotationVector = transform.rotation;
 				DEBUGGUITEXT = GameObject.Find ("AccelerometerVector").GetComponent ("GUIText") as GUIText;
 				FORCEINDICATOR = GameObject.Find ("ForceIndicator").GetComponent ("GUIText") as GUIText;
 				PLAYERCAMTRANSFORM = GameObject.Find ("LeftCamera").transform;
 				speedUserShouldHave = 0;
+				endTimeForBoost = 0;
 		}
 //		void Update ()
 //		{
@@ -137,18 +151,44 @@ public class PlayerMovement : MonoBehaviour
 	
 		void Update ()
 		{
-				
 //				FORCEINDICATOR.color = Color.magenta;
 //				FORCEINDICATOR.text = "%-" + percentageToChange.ToString ("F1");
 //				
-				CharacterController controller = GetComponent<CharacterController> ();
+				
+				bool shouldRestart = checkIfWeShouldRestartPlayer ();
+				if (!shouldRestart) {
+						CharacterController controller = GetComponent<CharacterController> ();
+						Vector3 forward = getForwardDirectionWithSlope ();
+						//if (controller.isGrounded)
+						//Debug.Log ("STANDARD FW:" + transform.TransformDirection (Vector3.forward) + "\nNEW: " + forward);
+						float speed = speedPlayerShouldHave ();
+						bool forwardIsZero = forward == Vector3.zero;
+						if (!controller.isGrounded || forwardIsZero) {
+								Vector3 newSpeed = lastFWTrajectory;
+								newSpeed.y -= 50.0f * Time.deltaTime;
+								lastFWTrajectory = newSpeed;
+								Debug.Log ("using last velocity: " + lastFWTrajectory);
+								controller.Move (newSpeed * Time.deltaTime);
+						} else {
+								lastFWTrajectory = controller.velocity;
+								lastFWTrajectory.Normalize ();
+								lastFWTrajectory = lastFWTrajectory * speed;
+								Debug.Log ("setting last velocity to: " + lastFWTrajectory);
+								controller.SimpleMove (forward * speed);
+						}
+						
+//						lastFWTrajectory = forward;
+			
+				}
 		
-				Vector3 forward = transform.TransformDirection (Vector3.forward);
 		
+				
+				//getForwardDirectionWithSlope ();
 //				controller.SimpleMove (newVelocity);
 		
 				//Debug.Log ("current speed:" + curSpeed);
-				controller.SimpleMove (forward * maxSpeed);
+				
+		
 				
 				//Debug.Log ("current velocity: " + controller.velocity);
 		
@@ -158,24 +198,138 @@ public class PlayerMovement : MonoBehaviour
 				//						nextDebugPrint = Time.time + 1;
 				//				}	
 				//			
-				checkIfWeShouldRestartPlayer ();
+				
+				
+				/*
+				
+				complex move!
+				CharacterController controller = GetComponent<CharacterController> ();
+		
+				Vector3 forward = transform.TransformDirection (Vector3.forward);
+				
+				Vector3 moveDirection;
+				if (controller.isGrounded) {
+						float speed = speedPlayerShouldHave ();
+						moveDirection = forward;
+						//moveDirection = new Vector3 (Input.GetAxis ("Horizontal"), 0, Input.GetAxis ("Vertical"));
+						//moveDirection = forward;
+						//moveDirection = transform.TransformDirection (moveDirection);
+						moveDirection *= speed;
+						//if (Input.GetButton ("Jump"))
+						//		moveDirection.y = jumpSpeed;
+			
+				} else {
+						moveDirection = controller.velocity;
+						float gravity = 9.81f;
+						moveDirection.y -= gravity * Time.deltaTime; //gravity
+				}
+				controller.Move (moveDirection * Time.deltaTime);
+				*/
 		
 		
 		}
 		
-		private void checkIfWeShouldRestartPlayer ()
+		private Vector3 getForwardDirectionWithSlope ()
 		{
-				float currentHeight = transform.position.y;
-				if (currentHeight < restartHeight) {
-						putCharacterAtBeginning ();
-						CharacterController controller = GetComponent<CharacterController> ();
-						controller.SimpleMove (Vector3.zero);
+				RaycastHit hit;
+				Ray downRay = new Ray (transform.position, -Vector3.up);
+				Vector3 forwardVector = Vector3.zero;
+				CharacterController controller = GetComponent<CharacterController> ();
+		
+				if (Physics.Raycast (downRay, out hit) && controller.isGrounded) {
+						//			Debug.Log ("we has hit! point: " + hit.point);
+						
+						forwardVector = transform.TransformDirection (Vector3.forward); //default forward;
+						Vector3 diffVector = getDiffVector (hit.point);
+						Debug.DrawRay (transform.position, diffVector, Color.green);
 			
+						//diffVector.Normalize ();
+						
+						if (Mathf.Abs (diffVector.y) > 0.01) {
+								Debug.Log ("diff in Y. Normal Forward: " + forwardVector + " \n new foward: " + (new Vector3 (forwardVector.x, diffVector.y, forwardVector.z)).normalized);
+						}
+					
+						forwardVector.y = diffVector.y;
+						forwardVector.Normalize ();
+			
+//						if (diffVector.y < -0.02) {
+//								Debug.Log ("downward slope!!!!!!!!");
+//						} else {
+//								Debug.Log ("setting y: " + diffVector.y + " to a total of : " + forwardVector);
+//						}
+						lastContactPoint = hit.point;
 				}
 		
+				return forwardVector;
 		}
+		
+		private Vector3 getDiffVector (Vector3 newContactPoint)
+		{
+				//avg the last three diffVectors
+				//Vector3 earliestDiff = secondLastContactPoint - thirdLastContactPoint;
+				Vector3 secondEarliest = lastContactPoint - secondLastContactPoint;
+				Vector3 latestDiff = newContactPoint - lastContactPoint;
+				
+				thirdLastContactPoint = secondLastContactPoint;
+				secondLastContactPoint = lastContactPoint;
+				lastContactPoint = newContactPoint;
+		
+				Vector3 averageVector = latestDiff + secondEarliest;//earliestDiff 
+				averageVector.Normalize ();
+				Debug.Log ("average vector:" + averageVector);
+				return averageVector;
+		
+		}
+		
+		private bool checkIfWeShouldRestartPlayer ()
+		{
+				float currentHeight = transform.position.y;
+				bool shouldRestart = currentHeight < restartHeight;
+				if (shouldRestart) {
+						putCharacterAtBeginning ();
+						CharacterController controller = GetComponent<CharacterController> ();
+						lastFWTrajectory = Vector3.zero;
+						controller.SimpleMove (Vector3.zero);
+				}
+				
+				return shouldRestart;
+		
+		}
+		
+		private float speedPlayerShouldHave ()
+		{
+				CharacterController controller = GetComponent<CharacterController> ();
+				float currentPlayerSpeed = controller.velocity.magnitude;
+				float speed = regularSpeed;
+				//Debug.Log ("regularSpeed is:" + regularSpeed);
+				if (Time.time < endTimeForBoost) {
+						//Debug.Log ("We want to boooost with boostspeed" + boostSpeed);
+						speed = boostSpeed;
+				} else if (currentPlayerSpeed > regularSpeed + 1) {
+						//if we have stopped boosting but is still traveling fast. slow down a little bit at a time
+						speed = currentPlayerSpeed * 0.95f;
+						//Debug.Log ("We want to slow down with speed" + speed);
+				}
+				//Debug.Log ("speed pSH is: " + speed);
+				return speed;
+		}
+		
+		public void boostPlayer ()
+		{
+				endTimeForBoost = Time.time + boostTime;
+		}
+		
 		public void putCharacterAtBeginning ()
 		{
 				transform.position = startVector;
+				transform.rotation = startRotationVector;
+		}
+		
+		void OnCollisionStay (Collision collision)
+		{
+				foreach (ContactPoint contact in collision.contacts) {
+						print (contact.thisCollider.name + " hit " + contact.otherCollider.name);
+						Debug.DrawRay (contact.point, contact.normal, Color.white);
+				}
 		}
 }
